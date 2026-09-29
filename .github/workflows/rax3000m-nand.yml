@@ -1,0 +1,98 @@
+name: Build RAX3000M NAND (OpenWrt v25.12.5 + MTK closed-source wifi)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "seed.config"
+      - ".github/workflows/**"
+
+env:
+  REPO_URL: https://github.com/shiyu1314/openwrt-source
+  REPO_BRANCH: v25.12.5
+  CONFIG_FILE: seed.config
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force > /dev/null 2>&1 || true
+          df -hT
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install build-essential clang flex bison g++ gawk gcc-multilib \
+            g++-multilib gettext git libncurses-dev libssl-dev python3-distutils \
+            python3-ply python3-pyelftools rsync unzip zlib1g-dev file wget curl \
+            subversion patch upx-ucl autoconf automake libtool antlr3 gperf swig ccache zstd xxd
+
+      - name: Clone OpenWrt source
+        run: git clone --depth 1 -b $REPO_BRANCH $REPO_URL openwrt
+
+      - name: Setup feeds and apply patches
+        working-directory: openwrt
+        run: |
+          # 关键：feeds.conf 存在时会整体遮蔽 feeds.conf.default，
+          # 必须先复制默认 feed 列表再追加，否则 luci/packages 等基础 feed 不会被拉取
+          cat feeds.conf.default > feeds.conf
+          # iStore 官方 feed（luci-app-store / taskd / luci-lib-taskd / luci-lib-xterm）
+          echo "src-git istore https://github.com/linkease/istore;main" >> feeds.conf
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          ./scripts/feeds install -d y -f -p istore luci-app-store taskd luci-lib-taskd luci-lib-xterm
+          # OpenClash 最新版（vernesong master）
+          git clone --depth 1 https://github.com/vernesong/openclash /tmp/openclash
+          cp -r /tmp/openclash/luci-app-openclash package/luci-app-openclash
+          # ttyd 终端菜单从「服务」移到「系统」
+          sed -i 's|admin/services/ttyd|admin/system/ttyd|g' \
+            feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json
+          # iStore 去掉 +tar 依赖：PACKAGE_TAR_XZ 在本源码树未定义，
+          # 新版 kconfig 遇未定义符号会把 CONFIG_PACKAGE_luci-app-store 直接判死
+          sed -i 's|LUCI_DEPENDS:=+curl +tar +libuci-lua +mount-utils +luci-lib-taskd|LUCI_DEPENDS:=+curl +libuci-lua +mount-utils +luci-lib-taskd|' \
+            feeds/istore/luci/luci-app-store/Makefile
+
+      - name: Load config
+        working-directory: openwrt
+        run: |
+          cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
+          make defconfig
+          grep -E "luci-app-(openclash|store|ttyd|upnp)|miniupnpd" .config | grep "=y" | head
+
+      - name: Download packages
+        working-directory: openwrt
+        run: |
+          make download -j$(nproc)
+          find dl -size -1024c -type f -delete || true
+          make download -j$(nproc)
+
+      - name: Build firmware
+        id: build
+        working-directory: openwrt
+        run: |
+          export FORCE_UNSAFE_CONFIGURE=1
+          echo "MAKE_EXIT=$(make -j$(nproc) 2>&1 | tee build.log | grep -cE 'Error' || true)" >> $GITHUB_ENV
+          make -j$(nproc) || make -j1 V=s || (echo BUILD_FAILED && exit 1)
+          df -hT
+
+      - name: Organize firmware
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          cd openwrt/bin/targets/mediatek/filogic
+          rm -rf packages
+          cp ../../../build.log /tmp/ || true
+          ls -lh
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rax3000m-nand-firmware-${{ github.run_id }}
+          path: |
+            openwrt/bin/targets/mediatek/filogic/*rax3000m-nand*
+          retention-days: 30
