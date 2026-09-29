@@ -11,7 +11,7 @@ CMCC RAX3000M（NAND 版）自定义 OpenWrt 固件项目：源码、配置、�
 | 无线驱动 | **MTK 闭源 mt_wifi 7.6.7.2**（20250408 固件）+ `kmod-warp`（WED 无线加速）+ `kmod-conninfra`，高功率 |
 | 有线加速 | `kmod-mediatek_hnat` 硬件 NAT + luci-app-turboacc-mtk |
 | 固件格式 | `.bin`（squashfs sysupgrade），**兼容旧版 bl-mt798x U-Boot**（Web 刷机 192.168.1.1） |
-| 体积 | 42MB（< 60MB 目标） |
+| 体积 | 42MB |
 
 ## 固件自带插件
 
@@ -22,7 +22,7 @@ CMCC RAX3000M（NAND 版）自定义 OpenWrt 固件项目：源码、配置、�
 - 无线管理 luci-app-mtwifi-cfg（功率/区域调节入口）、wpad-openssl（WPA3）
 - USB3（xhci-mtk + UAS）、ext4/ntfs3/exfat 文件系统、fullcone NAT、全中文界面
 
-> 快速入门（quickstart）及其专属依赖（smartmontools/mdadm/parted 等）已按需求移除。
+
 
 ## 仓库结构
 
@@ -71,12 +71,6 @@ make download -j8 && make -j$(nproc)
 
 已验证环境：Windows 11 + WSL2 Ubuntu 22.04（mirrored 网络），20 核 / 15GB 内存，全量编译约 3.5 小时。
 
-## 固件版本记录
-
-| 版本 | 日期 | 体积 | SHA256（前 8 位） | 变更 |
-|---|---|---|---|---|
-| v2 | 2026-09-29 | 42MB | `a3c5b31b` | +OpenClash / iStore / UPnP；ttyd 移系统组；移除 quickstart |
-| v1 | 2026-09-29 | 32MB | `223815f3` | 基线版：MTK 闭源驱动 + samba4 + ttyd |
 
 ## 刷机要点（NAND 版）
 
